@@ -1,0 +1,358 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="terminal">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>AI Consensus Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&family=Fira+Code:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/styles.css">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.1/marked.min.js"></script>
+</head>
+<body>
+
+<button class="sb-toggle shifted" id="sbToggle" onclick="toggleSidebar()">☰</button>
+
+<div class="layout">
+
+<aside class="sidebar" id="sidebar">
+  <div class="sb-head">
+    <div class="sb-logo">Consensus AI</div>
+    <div class="sb-sub">dual-model co-solver</div>
+  </div>
+  <div class="sb-body">
+
+    <div>
+      <div class="sb-title">Theme</div>
+      <div class="theme-grid" id="themeGrid">
+        <div class="theme-chip active" data-t="terminal" onclick="setTheme('terminal')">▓ Terminal</div>
+        <div class="theme-chip" data-t="cyberpunk" onclick="setTheme('cyberpunk')">◆ Cyberpunk</div>
+        <div class="theme-chip" data-t="frost" onclick="setTheme('frost')">❄ Frost</div>
+        <div class="theme-chip" data-t="amber" onclick="setTheme('amber')">◈ Amber</div>
+      </div>
+    </div>
+
+    <div>
+      <div class="sb-title">API Keys</div>
+      <div class="sb-group">
+        <div class="sb-label">Claude API Key</div>
+        <input type="password" class="sb-input" id="claudeKey" placeholder="sk-ant-..." autocomplete="off">
+      </div>
+      <div class="sb-group" style="margin-top:6px">
+        <div class="sb-label">OpenAI API Key</div>
+        <input type="password" class="sb-input" id="openaiKey" placeholder="sk-..." autocomplete="off">
+      </div>
+      <div class="sb-note" style="margin-top:4px">Keys stored in session only — cleared when you close the tab. Server .env keys used as fallback.</div>
+    </div>
+
+    <div>
+      <div class="sb-title">Settings</div>
+      <div class="sb-group">
+        <div class="sb-label">Mode</div>
+        <select class="sb-select" id="modeSelect" onchange="onModeChange()">
+          <option value="robust">Robust — consensus loop</option>
+          <option value="fast">Fast — best of two</option>
+        </select>
+      </div>
+      <div class="sb-group" id="iterGroup" style="margin-top:8px">
+        <div class="sb-label">Max iterations</div>
+        <input type="number" class="sb-input" id="iterInput" value="5" min="1" max="20">
+      </div>
+    </div>
+
+    <div>
+      <div class="sb-title">Attachments</div>
+      <div class="sb-group">
+        <div class="file-zone" id="fileZone">
+          <input type="file" id="fileInput" multiple>
+          Drop files or click to browse
+          <div class="fz-hint">.js .py .ts .pdf .docx .md .csv ...</div>
+        </div>
+        <div class="file-list" id="fileList"></div>
+      </div>
+    </div>
+
+  </div>
+  <div class="sb-footer">
+    <div class="sb-note">Files parsed server-side. Max 10MB/file.</div>
+  </div>
+</aside>
+
+<main class="main" id="mainContent">
+
+  <div class="hdr">
+    <h1>AI Consensus Platform</h1>
+    <p>Claude + GPT co-solve, then cross-review each other</p>
+  </div>
+
+  <div class="input-card">
+    <div class="prompt-line">
+      <span class="p-user">user@consensus</span><span class="p-sep">:~$</span>
+      <span class="p-cursor"></span>
+    </div>
+    <textarea id="question" placeholder="Enter your question, paste code, describe a task..."></textarea>
+    <div class="input-actions">
+      <button class="btn btn-run" id="submitBtn" onclick="submit()">Execute</button>
+      <button class="btn btn-clear" onclick="clearAll()">Clear</button>
+    </div>
+  </div>
+
+  <div class="progress-section" id="progressSection">
+    <div class="timeline" id="timeline"></div>
+  </div>
+
+  <div class="final-section" id="finalSection">
+    <div class="final-bar" id="finalBar">
+      <div class="final-tag" id="finalTag"></div>
+      <button class="copy-btn" onclick="copyAnswer()">Copy</button>
+    </div>
+    <div class="final-body" id="finalAnswer"></div>
+    <div class="final-stats" id="stats"></div>
+  </div>
+
+</main>
+</div>
+
+<script>
+function saveKeys() {
+  try {
+    sessionStorage.setItem("ck", document.getElementById("claudeKey").value);
+    sessionStorage.setItem("ok", document.getElementById("openaiKey").value);
+  } catch {}
+}
+function loadKeys() {
+  try {
+    const ck = sessionStorage.getItem("ck");
+    const ok = sessionStorage.getItem("ok");
+    if (ck) document.getElementById("claudeKey").value = ck;
+    if (ok) document.getElementById("openaiKey").value = ok;
+  } catch {}
+}
+document.getElementById("claudeKey").addEventListener("input", saveKeys);
+document.getElementById("openaiKey").addEventListener("input", saveKeys);
+loadKeys();
+
+function setTheme(t) {
+  document.documentElement.setAttribute("data-theme", t);
+  document.querySelectorAll(".theme-chip").forEach(c => {
+    c.classList.toggle("active", c.dataset.t === t);
+  });
+  try { localStorage.setItem("consensus-theme", t); } catch {}
+}
+try {
+  const s = localStorage.getItem("consensus-theme");
+  if (s) setTheme(s);
+} catch {}
+
+
+let sbOpen = window.innerWidth > 768;
+function toggleSidebar() {
+  sbOpen = !sbOpen;
+  document.getElementById("sidebar").classList.toggle("collapsed", !sbOpen);
+  document.getElementById("mainContent").classList.toggle("expanded", !sbOpen);
+  document.getElementById("sbToggle").classList.toggle("shifted", sbOpen);
+}
+if (!sbOpen) {
+  document.getElementById("sidebar").classList.add("collapsed");
+  document.getElementById("mainContent").classList.add("expanded");
+  document.getElementById("sbToggle").classList.remove("shifted");
+}
+
+
+const fi = document.getElementById("fileInput");
+const fz = document.getElementById("fileZone");
+const fl = document.getElementById("fileList");
+let files = [];
+
+fz.addEventListener("dragover", e => { e.preventDefault(); fz.classList.add("dragover"); });
+fz.addEventListener("dragleave", () => fz.classList.remove("dragover"));
+fz.addEventListener("drop", e => { e.preventDefault(); fz.classList.remove("dragover"); addF(e.dataTransfer.files); });
+fi.addEventListener("change", () => { addF(fi.files); fi.value = ""; });
+
+function addF(l) {
+  for (const f of l) if (!files.find(x => x.name === f.name && x.size === f.size)) files.push(f);
+  renderF();
+}
+function rmF(i) { files.splice(i, 1); renderF(); }
+function renderF() {
+  fl.innerHTML = files.map((f, i) =>
+    `<div class="file-chip"><span>${esc(f.name)}</span><span class="rm" onclick="rmF(${i})">✕</span></div>`
+  ).join("");
+}
+
+
+function onModeChange() {
+  const m = document.getElementById("modeSelect").value;
+  document.getElementById("iterGroup").style.display = m === "fast" ? "none" : "flex";
+  document.getElementById("iterInput").value = m === "fast" ? "1" : "5";
+}
+
+let activeS = null;
+function esc(s) { return (s || "").replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;"); }
+
+function addTL(cls, icon, label, detail) {
+  if (activeS) activeS.classList.remove("active-step");
+  const tl = document.getElementById("timeline");
+  const el = document.createElement("div");
+  const isStep = cls.includes("step");
+  el.className = `tl-item ${cls}`;
+  if (isStep) el.classList.add("active-step");
+  el.innerHTML = `
+    <div class="tl-icon">${icon}</div>
+    <div class="tl-body">
+      <span class="tl-label">${label}</span>
+      ${detail ? `<details><summary>details</summary><pre>${esc(detail)}</pre></details>` : ""}
+    </div>`;
+  tl.appendChild(el);
+  el.scrollIntoView({ behavior: "smooth", block: "nearest" });
+  if (isStep) activeS = el;
+}
+function deact() { if (activeS) activeS.classList.remove("active-step"); activeS = null; }
+
+function clearAll() {
+  document.getElementById("question").value = "";
+  files = []; renderF();
+  document.getElementById("timeline").innerHTML = "";
+  document.getElementById("progressSection").classList.remove("active");
+  const f = document.getElementById("finalSection");
+  f.classList.remove("active", "glow-ok", "glow-warn");
+  document.getElementById("submitBtn").disabled = false;
+  activeS = null; onModeChange();
+}
+
+function copyAnswer() {
+  navigator.clipboard.writeText(document.getElementById("finalAnswer").innerText);
+  const b = document.querySelector(".copy-btn");
+  b.textContent = "Copied!";
+  setTimeout(() => b.textContent = "Copy", 1500);
+}
+
+
+async function submit() {
+  const q = document.getElementById("question").value.trim();
+  if (!q && !files.length) return alert("Enter a query or attach files.");
+
+  document.getElementById("submitBtn").disabled = true;
+  document.getElementById("timeline").innerHTML = "";
+  document.getElementById("progressSection").classList.add("active");
+  const f = document.getElementById("finalSection");
+  f.classList.remove("active", "glow-ok", "glow-warn");
+  activeS = null;
+
+  const fd = new FormData();
+  fd.append("question", q);
+  fd.append("mode", document.getElementById("modeSelect").value);
+  fd.append("iterations", document.getElementById("iterInput").value);
+  const ck = document.getElementById("claudeKey").value.trim();
+  const ok = document.getElementById("openaiKey").value.trim();
+  if (ck) fd.append("claude_key", ck);
+  if (ok) fd.append("openai_key", ok);
+  for (const x of files) fd.append("files", x);
+
+  const t0 = Date.now();
+  try {
+    const resp = await fetch("/api/consensus", { method: "POST", body: fd });
+
+    if (!resp.ok && resp.headers.get("content-type")?.includes("application/json")) {
+      const e = await resp.json();
+      addTL("err", "!!", "Error: " + (e.error || "Unknown"));
+      document.getElementById("submitBtn").disabled = false;
+      return;
+    }
+
+    const reader = resp.body.getReader();
+    const dec = new TextDecoder();
+    let buf = "";
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const lines = buf.split("\n");
+      buf = lines.pop();
+      let ev = null;
+      for (const ln of lines) {
+        if (ln.startsWith("event: ")) ev = ln.slice(7).trim();
+        else if (ln.startsWith("data: ") && ev) {
+          try { handleEv(ev, JSON.parse(ln.slice(6)), t0); } catch {}
+          ev = null;
+        }
+      }
+    }
+  } catch (e) {
+    addTL("err", "!!", "Network: " + e.message);
+  }
+
+  document.getElementById("submitBtn").disabled = false;
+}
+
+
+function handleEv(ev, d, t0) {
+  const ts = `<span class="tl-ts">${((Date.now() - t0) / 1000).toFixed(1)}s</span>`;
+
+  switch (ev) {
+    case "status":
+      addTL("info", "»", d.message + ts); break;
+    case "iteration":
+      deact(); addTL("iter", "#" + d.iteration, "Iteration " + d.iteration + ts); break;
+    case "step": {
+      const c = d.model === "Claude";
+      addTL((c ? "claude" : "gpt") + " step", c ? "C" : "G", d.model + ": " + d.action + ts);
+      break;
+    }
+    case "answer": {
+      const c = d.model === "Claude";
+      deact();
+      addTL(c ? "claude" : "gpt", c ? "C" : "G", d.model + " responded" + ts, d.text);
+      break;
+    }
+    case "review": {
+      const c = d.reviewer === "Claude";
+      const ok = d.result?.decision === "ACCEPT";
+      addTL(ok ? "ok" : "warn", c ? "C" : "G",
+        `${d.reviewer} → ${d.reviewed}: ${ok ? "ACCEPT ✓" : "REVISE ✗"}` + ts,
+        d.result ? JSON.stringify(d.result, null, 2) : "parse failed");
+      break;
+    }
+    case "consensus":
+      deact();
+      addTL("ok", "✓", "Consensus — iter " + d.iteration + ts);
+      showFinal("ok", d.answer, ((Date.now() - t0) / 1000).toFixed(1), d.totalCalls, d.iteration);
+      break;
+    case "fallback":
+      deact();
+      addTL("warn", "⚠", "Max iterations — best effort" + ts);
+      showFinal("warn", d.answer, ((Date.now() - t0) / 1000).toFixed(1), d.totalCalls, null);
+      break;
+    case "error":
+      deact(); addTL("err", "!!", d.message); break;
+  }
+}
+
+function showFinal(type, answer, elapsed, calls, iter) {
+  const sec = document.getElementById("finalSection");
+  const bar = document.getElementById("finalBar");
+  const tag = document.getElementById("finalTag");
+  const body = document.getElementById("finalAnswer");
+  const stats = document.getElementById("stats");
+
+  sec.classList.add("active");
+  sec.classList.remove("glow-ok", "glow-warn");
+  sec.classList.add(type === "ok" ? "glow-ok" : "glow-warn");
+  bar.className = `final-bar ${type}`;
+
+  tag.innerHTML = type === "ok"
+    ? `<span class="dot"></span> Consensus Reached`
+    : `<span class="dot"></span> Best-Effort Output`;
+
+  try { body.innerHTML = marked.parse(answer || ""); } catch { body.textContent = answer; }
+
+  const mode = document.getElementById("modeSelect").value;
+  let s = `<span>⏱ ${elapsed}s</span><span>📡 ${calls} calls</span>`;
+  if (iter) s += `<span>🔄 ${iter} iter</span>`;
+  s += `<span>⚙ ${mode}</span>`;
+  stats.innerHTML = s;
+}
+</script>
+</body>
+</html>
